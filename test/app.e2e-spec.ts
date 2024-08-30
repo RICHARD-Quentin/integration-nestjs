@@ -6,8 +6,12 @@ import { Repository } from 'typeorm';
 import { UserEntity } from '../src/user/user.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailEntity } from '../src/email/email.entity';
+import { stat } from 'fs';
 
 const knownUserId = '0f9fcea9-f618-44e5-b182-0e3c83586f8b';
+const knownInactiveUserId = '0f9fcea9-f618-44e5-b182-0e3c83586f8c';
+const unknownUserId = '0f9fcea9-f618-44e5-b182-0e3c83586f8d';
+const badUuid = 'NotAnUUID';
 
 const knownUser = {
   id: knownUserId,
@@ -35,6 +39,22 @@ const knownUser = {
 
 const [email1, email2, email3] = knownUser.emails;
 
+const knownInactiveUser = {
+  id: knownInactiveUserId,
+  name: 'Moi Même',
+  status: 'inactive',
+  birthdate: new Date(1989, 3, 8).toISOString(),
+  emails: [
+    {
+      userId: knownInactiveUserId,
+      id: 'f7176922-9ae8-4ac7-b1d9-d6b8ed75475c',
+      address: 'test4@upcse-integration.coop'
+    },
+  ],
+};
+
+const email4 = knownInactiveUser.emails[0];
+
 describe('Tests e2e', () => {
   let app: INestApplication;
 
@@ -59,6 +79,9 @@ describe('Tests e2e', () => {
     const { emails, ...user } = knownUser;
     await userRepo.insert(user);
     await emailRepo.insert(emails);
+
+    await userRepo.insert(knownInactiveUser);
+    await emailRepo.insert(email4);
 
     await app.init();
   });
@@ -260,6 +283,142 @@ describe('Tests e2e', () => {
           .expect((res) => {
             expect(res.body.errors?.[0]?.message).not.toBe('Not Implemented');
             expect(res.body.data?.emailsList[0].user.id).toBe(knownUserId);
+          });
+      });
+    });
+
+    describe('[Mutation] addEmail', () => {
+      it(`[13] Devrait ajouter un email`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {addEmail(userId:"${knownUserId}", address:"${email1.address}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.data.addEmail).toBeDefined();
+          });
+      });
+
+      it(`[14] Devrait retourner une erreur si l'adresse email n'est pas valide`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {addEmail(userId:"${knownUserId}", address:"invalid.email")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0].extensions?.originalError?.message).toContain('L\'adresse email doit être valide');
+          });
+      })
+
+      it(`[15] Devrait retourner une erreur si l'utilisateur n'existe pas`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {addEmail(userId:"${unknownUserId}", address:"${email4.address}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0]?.message).toBe("L'utilisateur n'existe pas");
+          });
+      })
+
+      it(`[16] Devrait retourner une erreur si l'utilisateur est inactif`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {addEmail(userId:"${knownInactiveUserId}", address:"${email4.address}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0]?.message).toContain('L\'utilisateur n\'est pas actif');
+          });
+      })
+
+      it(`[17] Devrait retourner une erreur si l'identifiant de l'utilisateur n'est pas un UUID`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {addEmail(userId:"NotAnUUID", address:"${email4.address}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0].extensions?.originalError?.message).toContain('L\'identifiant de l\'utilisateur doit être un UUID');
+          });
+      });
+    });
+
+    describe('[Mutation] removeEmail', () => {
+      it(`[18] Devrait supprimer un email`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"${knownUserId}", emailId:"${email1.id}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.data.removeEmail).toBeDefined();
+          });
+      });
+
+      it(`[19] Devrait retourner une erreur si l'utilisateur n'existe pas`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"${unknownUserId}", emailId:"${email1.id}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0]?.message).toBe('L\'utilisateur n\'existe pas');
+          });
+      });
+
+      it(`[20] Devrait retourner une erreur si l'utilisateur est inactif`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"${knownInactiveUserId}", emailId:"${email4.id}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0]?.message).toBe('L\'utilisateur n\'est pas actif');
+          });
+      });
+
+      it(`[21] Devrait retourner une erreur si l'email n'existe pas`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"${knownUserId}", emailId:"${unknownUserId}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0]?.message).toBe('L\'adresse email n\'existe pas');
+          });
+      });
+
+      it(`[22] Devrait retourner une erreur si l'identifiant de l'email n'est pas un UUID`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"${knownUserId}", emailId:"NotAnUUID")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0].extensions?.originalError?.message).toContain('L\'identifiant de l\'email doit être un UUID');
+          });
+      });
+
+      it(`[23] Devrait retourner une erreur si l'identifiant de l'utilisateur n'est pas un UUID`, () => {
+        return request(app.getHttpServer())
+          .post('/graphql')
+          .send({
+            query: `mutation {removeEmail(userId:"NotAnUUID", emailId:"${email1.id}")}`,
+          })
+          .expect(200)
+          .expect((res) => {
+            expect(res.body.errors?.[0].extensions?.originalError?.message).toContain('L\'identifiant de l\'utilisateur doit être un UUID');
           });
       });
     });
