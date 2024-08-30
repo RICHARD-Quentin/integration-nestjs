@@ -19,8 +19,6 @@ import { AddUser, User, UserIdArgs } from './user.types';
 export class UserResolver {
   constructor(
     private readonly _service: UserService,
-    @InjectRepository(EmailEntity)
-    private readonly emailRepository: Repository<EmailEntity>,
   ) {}
 
   @Query(() => User, { name: 'user', nullable: true })
@@ -43,23 +41,6 @@ export class UserResolver {
     @Parent() user: User,
     @Args() filters: EmailFiltersArgs,
   ): Promise<UserEmail[]> {
-    const where: FindOptionsWhere<EmailEntity> = {
-      userId: Equal(user.id),
-    };
-
-    if (filters.address) {
-      if (filters.address.equal) {
-        where.address = Equal(filters.address.equal);
-      }
-
-      if (filters.address.in?.length > 0) {
-        where.address = In(filters.address.in);
-      }
-    }
-
-    return this.emailRepository.find({
-      where,
-      order: { address: 'asc' },
-    });
+    return await this._service.getWithFilters(user, filters);
   }
 }

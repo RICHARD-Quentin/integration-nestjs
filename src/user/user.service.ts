@@ -1,14 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Equal, Repository } from 'typeorm';
+import { Brackets, Equal, Repository } from 'typeorm';
 import { UserEntity } from './user.entity';
 import { IAddUser, IUser, UserId } from './user.interfaces';
+import { EmailFiltersArgs, UserEmail } from '../email/email.types';
+import { User } from './user.types';
+import { EmailEntity } from '../email/email.entity';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+    @InjectRepository(EmailEntity)
+    private readonly emailRepository: Repository<EmailEntity>,
   ) {}
 
   /**
@@ -54,5 +59,19 @@ export class UserService {
    */
   get(id: UserId): Promise<IUser> {
     return this.userRepository.findOneBy({ id: Equal(id) });
+  }
+
+  getWithFilters(user: User, filters: EmailFiltersArgs): Promise<UserEmail[]> {
+    const queryBuilder = this.emailRepository.createQueryBuilder('email').where('email.userId = :id', { id: user.id });
+
+    if(filters.address) {
+      queryBuilder.andWhere(new Brackets(qb => {
+        if(filters.address.equal) qb.orWhere('email.address = :address', { address: filters.address.equal });
+        if(filters.address.in?.length > 0) qb.orWhere('email.address IN (:...InAddress)', { InAddress: filters.address.in });
+      }));    
+    }
+
+    return queryBuilder.orderBy('address', 'ASC').getMany();
+
   }
 }
