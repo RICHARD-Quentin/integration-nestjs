@@ -1,5 +1,5 @@
 import { NotImplementedException } from '@nestjs/common';
-import { Mutation } from '@nestjs/graphql';
+import { InputType, Mutation } from '@nestjs/graphql';
 import {
   Args,
   ID,
@@ -8,7 +8,7 @@ import {
   ResolveField,
   Resolver,
 } from '@nestjs/graphql';
-import { EmailFiltersArgs, UserEmail } from './email.types';
+import { AddEmail, EmailFiltersArgs, RemoveEmail, UserEmail } from './email.types';
 import { User } from '../user/user.types';
 import { EmailService } from './email.service';
 
@@ -32,5 +32,15 @@ export class EmailResolver {
   @ResolveField(() => User, { name: 'user' })
   async getUser(@Parent() parent: UserEmail): Promise<User> {
     return this._service.getUserByEmailId(parent.userId);
+  }
+
+  @Mutation(() => ID)
+  async addEmail(@Args() addEmail: AddEmail): Promise<string> {
+    return this._service.add(addEmail);
+  }
+
+  @Mutation(() => ID)
+  async removeEmail(@Args() removeEmail: RemoveEmail): Promise<string> {
+    return this._service.remove(removeEmail);
   }
 }

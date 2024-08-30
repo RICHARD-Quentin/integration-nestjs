@@ -6,3 +6,8 @@ export type IEmail = {
 export type IEmailFilters = {
   address?: { equal: string; in: string[] } | null;
 };
+
+export type IAddEmail = {
+  userId: string;
+  address: string;
+};
